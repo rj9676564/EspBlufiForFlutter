@@ -18,3 +18,7 @@
 ## 1.0.4
 
 - Updated version number in pubspec.yaml to 1.0.4
+
+## 1.0.4+1
+
+- Fixed android build error (android:attr/lStar)
