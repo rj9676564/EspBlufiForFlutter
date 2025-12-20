@@ -6,16 +6,24 @@ import android.content.Context;
 
 import java.util.List;
 
-import trade.ksanbal.esp_blufi_for_flutter.BlufiClientImpl;
 import trade.ksanbal.esp_blufi_for_flutter.params.BlufiConfigureParams;
+import trade.ksanbal.esp_blufi_for_flutter.response.BlufiStatusResponse;
+import trade.ksanbal.esp_blufi_for_flutter.response.BlufiVersionResponse;
 
 public class BlufiClient {
-//    public static final String VERSION = BuildConfig.VERSION_NAME;
-
-    private BlufiClientImpl mImpl;
+    private final BlufiClientImpl mImpl;
 
     public BlufiClient(Context context, BluetoothDevice device) {
         mImpl = new BlufiClientImpl(this, context, device);
+    }
+
+    /**
+     * Enable or disable print debug log in BlufiClient
+     *
+     * @param enable true will print debug log and false will not
+     */
+    public void printDebugLog(boolean enable) {
+        mImpl.printDebugLog(enable);
     }
 
     /**
@@ -39,10 +47,21 @@ public class BlufiClient {
     /**
      * Set the maximum length of each Blufi packet, the excess part will be subcontracted.
      *
-     * @param lengthLimit the maximum length
+     * @param lengthLimit range is 20 ~ 255. If -1, use default limit value of BluFi
      */
     public void setPostPackageLengthLimit(int lengthLimit) {
         mImpl.setPostPackageLengthLimit(lengthLimit);
+    }
+
+    /**
+     * Set gatt write timeout.
+     * If timeout, {@link BlufiCallback#onError(BlufiClient, int)} will be invoked,
+     * the errCode is {@link BlufiCallback#CODE_GATT_WRITE_TIMEOUT}
+     *
+     * @param timeout in milliseconds
+     */
+    public void setGattWriteTimeout(long timeout) {
+        mImpl.setGattWriteTimeout(timeout);
     }
 
     /**
@@ -76,7 +95,7 @@ public class BlufiClient {
 
     /**
      * Request to get device version. The result will notified in
-     *
+     * {@link BlufiCallback#onDeviceVersionResponse(BlufiClient, int, BlufiVersionResponse)}
      */
     public void requestDeviceVersion() {
         mImpl.requestDeviceVersion();
@@ -84,7 +103,7 @@ public class BlufiClient {
 
     /**
      * Request to get device current status. The result will be notified in
-     *
+     * {@link BlufiCallback#onDeviceStatusResponse(BlufiClient, int, BlufiStatusResponse)}
      */
     public void requestDeviceStatus() {
         mImpl.requestDeviceStatus();

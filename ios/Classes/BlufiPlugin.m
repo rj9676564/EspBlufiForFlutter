@@ -1,3 +1,8 @@
+/**
+ * ESP Blufi Flutter Plugin - iOS 实现
+ * 提供蓝牙配网功能，支持 Station 模式配网
+ */
+
 #import "BlufiPlugin.h"
 #import "BlufiClient.h"
 #import "ESPPeripheral.h"
@@ -43,6 +48,9 @@
   return self;
 }
 
+/**
+ * 扫描蓝牙设备
+ */
 - (void)scanDeviceInfo {
     [self.espFBYBleHelper startScan:^(ESPPeripheral * _Nonnull device) {
         
@@ -59,12 +67,19 @@
     }];
 }
 
+/**
+ * 停止扫描蓝牙设备
+ */
 -(void)stopScan {
     [self.espFBYBleHelper stopScan];
     [self updateMessage:[self makeJsonWithCommand:@"stop_scan_ble" data:@"1"]];
 }
 
 
+/**
+ * 连接蓝牙设备
+ * @param perripheral 要连接的蓝牙设备
+ */
 - (void)connectPeripheral:(ESPPeripheral *)perripheral {
     self.connected = NO;
     self.device = perripheral;
@@ -81,30 +96,49 @@
     [_blufiClient connect:_device.uuid.UUIDString];
 }
 
+/**
+ * 断开连接处理
+ */
 - (void)onDisconnected {
     if (_blufiClient) {
         [_blufiClient close];
     }
 }
 
+/**
+ * 请求关闭连接
+ */
 - (void)requestCloseConnection {
      if (_blufiClient) {
          [_blufiClient requestCloseConnection];
     }
 }
 
+/**
+ * 协商安全加密
+ * 如果安全协商成功，后续通信数据将被加密
+ */
 -(void)negotiateSecurity {
     if (_blufiClient) {
         [_blufiClient negotiateSecurity];
     }
 }
 
+/**
+ * 请求设备版本信息
+ */
 -(void) requestDeviceVersion {
     if (_blufiClient) {
         [_blufiClient requestDeviceVersion];
     }
 }
 
+/**
+ * 配置配网参数（Station模式）
+ * 设置 WiFi SSID 和密码，使设备连接到指定的 WiFi 网络
+ * @param ssid WiFi SSID（WiFi名称）
+ * @param password WiFi 密码
+ */
 -(void)configProvisionWithSSID: (NSString *)ssid password:(NSString *)password {
      BlufiConfigureParams *params = [[BlufiConfigureParams alloc] init];
     params.opMode = OpModeSta;
@@ -116,18 +150,30 @@
        }
 }
 
+/**
+ * 请求设备当前状态
+ * 可以查询设备是否已连接到WiFi等信息
+ */
 -(void)requestDeviceStatus {
     if (_blufiClient) {
         [_blufiClient requestDeviceStatus];
     }
 }
 
+/**
+ * 请求设备扫描WiFi列表
+ * 获取设备扫描到的附近WiFi网络列表
+ */
 -(void)requestDeviceScan {
     if (_blufiClient) {
         [_blufiClient requestDeviceScan];
     }
 }
 
+/**
+ * 发送自定义数据到设备
+ * @param data 自定义数据字符串
+ */
 -(void)postCustomData:(NSString *) data {
     
     if (_blufiClient && data != nil) {
@@ -285,9 +331,15 @@
 }
 
 
+/**
+ * 处理方法调用
+ * 处理来自 Flutter 端的方法调用
+ */
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
+  // 获取平台版本
   if ([@"getPlatformVersion" isEqualToString:call.method]) {
     result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
+    // 扫描蓝牙设备
     } else if ([@"scanDeviceInfo" isEqualToString:call.method]) {
         
         NSString *filter = call.arguments[@"filter"];
@@ -297,33 +349,42 @@
         [self scanDeviceInfo];
         
     }
+    // 停止扫描蓝牙设备
     else if ([@"stopScan" isEqualToString:call.method]) {
         [self stopScan];
     }
+    // 连接蓝牙设备
     else if ([@"connectPeripheral" isEqualToString:call.method]) {
         NSString *peripheral = call.arguments[@"peripheral"];
         [self connectPeripheral:self.peripheralDictionary[peripheral]];
     }
+    // 请求关闭连接
     else if ([@"requestCloseConnection" isEqualToString:call.method]) {
         [self requestCloseConnection];
     }
+    // 协商安全加密
     else if ([@"negotiateSecurity" isEqualToString:call.method]) {
         [self negotiateSecurity];
     }
+    // 请求设备版本信息
     else if ([@"requestDeviceVersion" isEqualToString:call.method]) {
         [self requestDeviceVersion];
     }
+    // 配置配网参数（Station模式）
     else if ([@"configProvision" isEqualToString:call.method]) {
             NSString *username = call.arguments[@"username"];
             NSString *password = call.arguments[@"password"];
           [self configProvisionWithSSID:username password:password];
     }
+    // 请求设备当前状态
     else if ([@"requestDeviceStatus" isEqualToString:call.method]) {
         [self requestDeviceStatus];
     }
+    // 请求设备扫描WiFi列表
     else if ([@"requestDeviceScan" isEqualToString:call.method]) {
         [self requestDeviceScan];
     }
+    // 发送自定义数据到设备
     else if ([@"postCustomData" isEqualToString:call.method]) {
         NSString *customData = call.arguments[@"custom_data"];
         [self postCustomData:customData];

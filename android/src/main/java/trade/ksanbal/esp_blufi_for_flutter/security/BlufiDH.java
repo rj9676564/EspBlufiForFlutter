@@ -1,5 +1,7 @@
 package trade.ksanbal.esp_blufi_for_flutter.security;
 
+import android.util.Log;
+
 import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -18,11 +20,13 @@ import javax.crypto.spec.DHParameterSpec;
 import javax.crypto.spec.DHPublicKeySpec;
 
 public class BlufiDH {
-    private BigInteger mP;
-    private BigInteger mG;
+    private static final String TAG = "BlufiDH";
 
-    private DHPrivateKey mPrivateKey;
-    private DHPublicKey mPublicKey;
+    private final BigInteger mP;
+    private final BigInteger mG;
+
+    private final DHPrivateKey mPrivateKey;
+    private final DHPublicKey mPublicKey;
 
     private byte[] mSecretKey;
 
@@ -67,9 +71,25 @@ public class BlufiDH {
             ka.doPhase(publicKey, true);
 
             // Generate the secret key
-            mSecretKey = ka.generateSecret();
+            byte[] tempSecret = ka.generateSecret();
+            int offset = 0;
+            for (byte b : tempSecret) {
+                if (b == 0) {
+                    offset++;
+                } else {
+                    break;
+                }
+            }
+            byte[] secretKey;
+            if (offset == 0) {
+                secretKey = tempSecret;
+            } else {
+                secretKey = new byte[tempSecret.length - offset];
+                System.arraycopy(tempSecret, offset, secretKey, 0, tempSecret.length - offset);
+            }
+            mSecretKey = secretKey;
         } catch (NoSuchAlgorithmException | InvalidKeySpecException | InvalidKeyException e) {
-            e.printStackTrace();
+            Log.w(TAG, e);
         }
     }
 
@@ -90,7 +110,7 @@ public class BlufiDH {
         } catch (NoSuchAlgorithmException
                 | InvalidAlgorithmParameterException
                 | ClassCastException e) {
-            e.printStackTrace();
+            Log.w(TAG, e);
 
             return null;
         }

@@ -5,12 +5,24 @@
          In most cases you can leave this as-is, but you if you want to provide
          additional functionality it is fine to subclass or reimplement
          FlutterApplication and put your custom class here. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
+    <uses-permission android:name="android.permission.BLUETOOTH_DEVICE_NAME" />
+    <uses-permission android:name="android.permission.BLUETOOTH_DEVICE_ADDRESS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_DEVICE_CLASS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_DEVICE_TYPE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_DEVICE_PAIRING" />
     <application
-        android:name="io.flutter.app.FlutterApplication"
         android:label="esp_blufi_for_flutter_example"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
+            android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

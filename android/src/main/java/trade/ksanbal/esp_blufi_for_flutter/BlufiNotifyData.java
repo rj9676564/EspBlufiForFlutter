@@ -2,14 +2,14 @@ package trade.ksanbal.esp_blufi_for_flutter;
 
 import java.io.ByteArrayOutputStream;
 
-public class BlufiNotifyData {
+class BlufiNotifyData {
     private int mTypeValue;
     private int mPkgType;
     private int mSubType;
 
     private int mFrameCtrlValue;
 
-    private ByteArrayOutputStream mDataOS;
+    private final ByteArrayOutputStream mDataOS;
 
     BlufiNotifyData() {
         mDataOS = new ByteArrayOutputStream();
@@ -19,23 +19,23 @@ public class BlufiNotifyData {
         return mTypeValue;
     }
 
-    public void setType(int typeValue) {
+    void setType(int typeValue) {
         mTypeValue = typeValue;
     }
 
-    public int getPkgType() {
+    int getPkgType() {
         return mPkgType;
     }
 
-    public void setPkgType(int pkgType) {
+    void setPkgType(int pkgType) {
         mPkgType = pkgType;
     }
 
-    public int getSubType() {
+    int getSubType() {
         return mSubType;
     }
 
-    public void setSubType(int subType) {
+    void setSubType(int subType) {
         mSubType = subType;
     }
 
@@ -43,15 +43,15 @@ public class BlufiNotifyData {
         return mFrameCtrlValue;
     }
 
-    public void setFrameCtrl(int frameCtrl) {
+    void setFrameCtrl(int frameCtrl) {
         mFrameCtrlValue = frameCtrl;
     }
 
-    public void addData(byte[] bytes, int offset) {
+    void addData(byte[] bytes, int offset) {
         mDataOS.write(bytes, offset, bytes.length - offset);
     }
 
-    public byte[] getDataArray() {
+    byte[] getDataArray() {
         return mDataOS.toByteArray();
     }
 }

@@ -1,30 +1,23 @@
 package trade.ksanbal.esp_blufi_for_flutter;
 
 import android.Manifest;
-
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
-
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
@@ -32,13 +25,11 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -53,28 +44,25 @@ import trade.ksanbal.esp_blufi_for_flutter.params.BlufiConfigureParams;
 import trade.ksanbal.esp_blufi_for_flutter.params.BlufiParameter;
 import trade.ksanbal.esp_blufi_for_flutter.response.BlufiScanResult;
 import trade.ksanbal.esp_blufi_for_flutter.response.BlufiStatusResponse;
-import trade.ksanbal.esp_blufi_for_flutter.response.BlufiVersionResponse;
 
-/** BlufiPlugin */
+/**
+ * ESP Blufi Flutter Plugin - Android 实现
+ * 提供蓝牙配网功能，支持 Station 模式配网
+ */
 public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHandler {
 
-  private static final long TIMEOUT_SCAN = 4000L;
   private static final int REQUEST_FINE_LOCATION_PERMISSIONS = 1452;
-
-
-  private List<ScanResult> mBleList;
 
   private Map<String, ScanResult> mDeviceMap;
   private ScanCallback mScanCallback;
   private String mBlufiFilter;
-  private volatile long mScanStartTime;
-
-  private ExecutorService mThreadPool;
-  private Future mUpdateFuture;
 
   private BluetoothDevice mDevice;
   private BlufiClient mBlufiClient;
   private volatile boolean mConnected;
+  private volatile boolean mSecurityNegotiated;
+  private CountDownLatch mConnectLatch;
+  private volatile boolean mConnectResult;
 
   private Context mContext;
   private ActivityPluginBinding activityBinding;
@@ -84,12 +72,7 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
   private EventChannel.EventSink sink;
 
   private final BlufiLog mLog = new BlufiLog(getClass());
-  /// The MethodChannel that will the communication between Flutter and native Android
-  ///
-  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
-  /// when the Flutter Engine is detached from the Activity
   private MethodChannel channel;
-
   private Handler handler;
 
 
@@ -115,17 +98,21 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
     };
     stateChannel.setStreamHandler(streamHandler);
     mContext = flutterPluginBinding.getApplicationContext();
-    mThreadPool = Executors.newSingleThreadExecutor();
-    mBleList = new LinkedList<>();
     mDeviceMap = new HashMap<>();
     mScanCallback = new ScanCallback();
   }
 
+  /**
+   * 处理方法调用
+   * 处理来自 Flutter 端的方法调用
+   */
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+    // 获取平台版本
     if (call.method.equals("getPlatformVersion")) {
       result.success("Android " + Build.VERSION.RELEASE);
     }
+    // 扫描蓝牙设备
     else if (call.method.equals("scanDeviceInfo")) {
       if (ContextCompat.checkSelfPermission(mContext, Manifest.permission.ACCESS_FINE_LOCATION)
               != PackageManager.PERMISSION_GRANTED) {
@@ -136,45 +123,69 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
                 },
                 REQUEST_FINE_LOCATION_PERMISSIONS);
       }
-        String filter = call.argument("filter");
-        scan(filter, result);
+      String filter = call.argument("filter");
+      scan(filter, result);
     }
+    // 停止扫描蓝牙设备
     else if (call.method.equals("stopScan")) {
-        stopScan();
+      stopScan();
+      result.success(true);
     }
+    // 连接蓝牙设备
     else if (call.method.equals("connectPeripheral")) {
       String deviceId = call.argument("peripheral");
       if (deviceId != null) {
-        connectDevice(mDeviceMap.get(deviceId).getDevice());
-        result.success(true);
-      }
-      else {
-        result.success(false);
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter != null) {
+          try {
+            BluetoothDevice device = adapter.getRemoteDevice(deviceId);
+            boolean connectSuccess = connectDeviceSync(device);
+            result.success(connectSuccess);
+          } catch (IllegalArgumentException e) {
+            mLog.w("Invalid device address: " + deviceId);
+            result.error("INVALID_ARGUMENT", "Invalid device address: " + deviceId, null);
+          }
+        } else {
+          mLog.w("Bluetooth adapter is null");
+          result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter is not available", null);
+        }
+      } else {
+        mLog.w("Device address is null");
+        result.error("INVALID_ARGUMENT", "Device address cannot be null", null);
       }
     }
+    // 请求关闭连接
     else if (call.method.equals("requestCloseConnection")) {
       disconnectGatt();
+      result.success(true);
     }
+    // 协商安全加密
     else if (call.method.equals("negotiateSecurity")) {
       negotiateSecurity();
+      result.success(true);
     }
-    else if (call.method.equals("requestDeviceVersion")) {
-      requestDeviceVersion();
-    }
+    // 配置配网参数（Station模式）
     else if (call.method.equals("configProvision")) {
-      String userName = call.argument("username");
+      String ssid = call.argument("username");
       String password = call.argument("password");
-      configure(userName, password);
+      if (ssid == null || ssid.isEmpty()) {
+        mLog.w("SSID is empty");
+        updateMessage(makeJson("configure_params","0"));
+        result.error("INVALID_ARGUMENT", "SSID cannot be empty", null);
+        return;
+      }
+      configure(ssid, password != null ? password : "");
+      result.success(true);
     }
+    // 请求设备当前状态
     else if (call.method.equals("requestDeviceStatus")) {
       requestDeviceStatus();
+      result.success(true);
     }
+    // 请求设备扫描WiFi列表
     else if (call.method.equals("requestDeviceScan")) {
       requestDeviceWifiScan();
-    }
-    else if (call.method.equals("postCustomData")) {
-      String dataStr = call.argument("custom_data");
-      postCustomData(dataStr);
+      result.success(true);
     }
     else {
       result.notImplemented();
@@ -187,124 +198,256 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
   }
 
 
+  /**
+   * 扫描蓝牙设备
+   * @param filter 过滤字符串，用于过滤设备名称
+   * @param result Flutter 回调结果
+   */
   private void scan(String filter, Result result) {
-    startScan21(filter, result);
-  }
-
-  private void startScan21(String filter, Result result) {
     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+    if (adapter == null) {
+      mLog.w("Bluetooth adapter is null");
+      result.success(false);
+      return;
+    }
+
     BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
     if (!adapter.isEnabled() || scanner == null) {
+      mLog.w("Bluetooth is not enabled or scanner is null");
       result.success(false);
-
       return;
     }
 
     mDeviceMap.clear();
-    mBleList.clear();
     mBlufiFilter = filter;
-    mScanStartTime = SystemClock.elapsedRealtime();
 
-    mLog.d("Start scan ble");
-    scanner.startScan(null, new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
-            mScanCallback);
-    result.success(false);
+    mLog.d("Start scan BLE devices");
+    scanner.startScan(null,
+        new ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build(),
+        mScanCallback);
+    result.success(true);
   }
 
+  /**
+   * 停止扫描蓝牙设备
+   */
   private void stopScan() {
-    stopScan21();
-  }
-
-  private void stopScan21() {
     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-    BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
-    if (scanner != null) {
-      scanner.stopScan(mScanCallback);
+    if (adapter != null) {
+      BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
+      if (scanner != null) {
+        scanner.stopScan(mScanCallback);
+        mLog.d("Stop scan BLE devices");
+        updateMessage(makeJson("stop_scan_ble","1"));
+      }
     }
-    if (mUpdateFuture != null) {
-      mUpdateFuture.cancel(true);
-    }
-    mLog.d("Stop scan ble");
-    updateMessage(makeJson("stop_scan_ble","1"));
   }
 
+  /**
+   * 连接蓝牙设备（同步方法）
+   * @param device 要连接的蓝牙设备
+   * @return true 连接成功，false 连接失败或超时
+   */
+  boolean connectDeviceSync(BluetoothDevice device) {
+    if (device == null) {
+      mLog.w("Cannot connect: device is null");
+      return false;
+    }
+
+    // 如果已有连接，先关闭
+    if (mBlufiClient != null) {
+      mBlufiClient.close();
+      mBlufiClient = null;
+    }
+
+    // 重置连接状态
+    mConnected = false;
+    mSecurityNegotiated = false;
+    mConnectResult = false;
+    mConnectLatch = new CountDownLatch(1);
+
+    mDevice = device;
+    mBlufiClient = new BlufiClient(mContext, mDevice);
+    mBlufiClient.setGattCallback(new GattCallback());
+    mBlufiClient.setBlufiCallback(new BlufiCallbackMain());
+    mBlufiClient.setGattWriteTimeout(BlufiConstants.GATT_WRITE_TIMEOUT);
+    mBlufiClient.connect();
+    mLog.d("Connecting to device: " + device.getAddress());
+
+    // 等待连接结果，超时时间 10 秒
+    try {
+      boolean awaitResult = mConnectLatch.await(10, TimeUnit.SECONDS);
+      if (!awaitResult) {
+        mLog.w("Connection timeout");
+        return false;
+      }
+      return mConnectResult;
+    } catch (InterruptedException e) {
+      mLog.w("Connection interrupted");
+      Thread.currentThread().interrupt();
+      return false;
+    } finally {
+      mConnectLatch = null;
+    }
+  }
+
+  /**
+   * 连接蓝牙设备（异步方法，保留用于内部调用）
+   * @param device 要连接的蓝牙设备
+   */
   void connectDevice(BluetoothDevice device) {
+    if (device == null) {
+      mLog.w("Cannot connect: device is null");
+      return;
+    }
+
     mDevice = device;
     if (mBlufiClient != null) {
       mBlufiClient.close();
       mBlufiClient = null;
     }
 
+    mConnected = false;
+    mSecurityNegotiated = false;
     mBlufiClient = new BlufiClient(mContext, mDevice);
     mBlufiClient.setGattCallback(new GattCallback());
     mBlufiClient.setBlufiCallback(new BlufiCallbackMain());
+    mBlufiClient.setGattWriteTimeout(BlufiConstants.GATT_WRITE_TIMEOUT);
     mBlufiClient.connect();
+    mLog.d("Connecting to device: " + device.getAddress());
   }
 
 
+  /**
+   * 断开GATT连接
+   */
   private void disconnectGatt() {
     if (mBlufiClient != null) {
       mBlufiClient.requestCloseConnection();
     }
+    mConnected = false;
+    mSecurityNegotiated = false;
   }
 
   /**
-   * If negotiate security success, the continue communication data will be encrypted.
+   * 协商安全加密
+   * 如果安全协商成功，后续通信数据将被加密
    */
   private void negotiateSecurity() {
-    mBlufiClient.negotiateSecurity();
+    if (mBlufiClient == null) {
+      mLog.w("Cannot negotiate security: BlufiClient is null");
+      updateMessage(makeJson("negotiate_security","0"));
+      return;
+    }
+    if (!mConnected) {
+      mLog.w("Cannot negotiate security: not connected");
+      updateMessage(makeJson("negotiate_security","0"));
+      return;
+    }
+    if (mSecurityNegotiated) {
+      mLog.d("Security already negotiated, skipping");
+      return;
+    }
+    mLog.d("Starting security negotiation");
+//    mBlufiClient.negotiateSecurity();
   }
 
 
-  private void configure(String userName, String password) {
+  /**
+   * 配置设备为 Station 模式
+   * 设置 WiFi SSID 和密码，使设备连接到指定的 WiFi 网络
+   *
+   * @param ssid WiFi SSID（WiFi名称）
+   * @param password WiFi 密码
+   */
+  private void configure(String ssid, String password) {
+    if (mBlufiClient == null) {
+      mLog.w("Cannot configure: BlufiClient is null");
+      updateMessage(makeJson("configure_params","0"));
+      return;
+    }
+    if (!mConnected) {
+      mLog.w("Cannot configure: not connected");
+      updateMessage(makeJson("configure_params","0"));
+      return;
+    }
+//    if (!mSecurityNegotiated) {
+//      mLog.w("Cannot configure: security not negotiated");
+//      updateMessage(makeJson("configure_params","0"));
+//      return;
+//    }
+
+    // Create configuration parameters for station mode
     BlufiConfigureParams params = new BlufiConfigureParams();
-    params.setOpMode(1);
-    byte[] ssidBytes = (byte[]) userName.getBytes();
+    params.setOpMode(BlufiParameter.OP_MODE_STA);
+
+    // Set SSID as byte array to support non-ASCII characters
+    // Use UTF-8 encoding to ensure proper character handling
+    byte[] ssidBytes = ssid.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     params.setStaSSIDBytes(ssidBytes);
-    params.setStaPassword(password);
+    params.setStaBSSID(ssid);
+    params.setStaPassword(password != null ? password : "");
+
+    mLog.d("Configuring station mode - SSID: " + ssid + " (length: " + ssidBytes.length + " bytes)");
+    mLog.d("Password length: " + (password != null ? password.length() : 0) + " characters");
     mBlufiClient.configure(params);
   }
 
   /**
-   * Request to get device current status
+   * 请求设备当前状态
+   * 可以查询设备是否已连接到WiFi等信息
    */
   private void requestDeviceStatus() {
+    if (mBlufiClient == null || !mConnected) {
+      mLog.w("Cannot request device status: not connected");
+      updateMessage(makeJson("device_status","0"));
+      return;
+    }
     mBlufiClient.requestDeviceStatus();
   }
 
   /**
-   * Request to get device blufi version
-   */
-  private void requestDeviceVersion() {
-    mBlufiClient.requestDeviceVersion();
-  }
-
-  /**
-   * Request to get AP list that the device scanned
+   * 请求设备扫描WiFi列表
+   * 获取设备扫描到的附近WiFi网络列表
    */
   private void requestDeviceWifiScan() {
-    mBlufiClient.requestDeviceWifiScan();
-  }
-
-  /**
-   * Try to post custom data
-   */
-  private void postCustomData(String dataString) {
-    if (dataString != null) {
-      mBlufiClient.postCustomData(dataString.getBytes());
+    if (mBlufiClient == null || !mConnected) {
+      mLog.w("Cannot request device WiFi scan: not connected");
+      updateMessage(makeJson("wifi_info","0"));
+      return;
     }
+    mBlufiClient.requestDeviceWifiScan();
   }
 
   private void onGattConnected() {
     mConnected = true;
+    mConnectResult = true;
+    // 通知等待连接的线程
+    if (mConnectLatch != null) {
+      mConnectLatch.countDown();
+    }
   }
 
   private void onGattDisconnected() {
     mConnected = false;
+    mSecurityNegotiated = false;
+    // 如果正在等待连接，通知连接失败
+    if (mConnectLatch != null && mConnectLatch.getCount() > 0) {
+      mConnectResult = false;
+      mConnectLatch.countDown();
+    }
   }
 
+  /**
+   * GATT 服务特征发现完成
+   * MTU 设置完成，服务发现完成，可以开始安全协商
+   * 参考 BlufiActivity，只通知 Flutter 端已准备好，不做其他处理
+   */
   private void onGattServiceCharacteristicDiscovered() {
-
+    mLog.d("GATT prepared, ready for operations");
+    updateMessage(makeJson("gatt_prepared","1"));
   }
 
 
@@ -320,21 +463,25 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
           case BluetoothProfile.STATE_CONNECTED:
             onGattConnected();
             updateMessage(makeJson("peripheral_connect","1"));
-//            updateMessage(String.format("Connected %s", devAddr), false);
+            mLog.d("Connected to device: " + devAddr);
             break;
           case BluetoothProfile.STATE_DISCONNECTED:
             gatt.close();
             onGattDisconnected();
             updateMessage(makeJson("peripheral_connect","0"));
-//            updateMessage(String.format("Disconnected %s", devAddr), false);
+            mLog.d("Disconnected from device: " + devAddr);
             break;
         }
       } else {
+        mLog.w(String.format(Locale.ENGLISH, "Connection failed: %s, status=%d", devAddr, status));
         gatt.close();
         onGattDisconnected();
         updateMessage(makeJson("peripheral_disconnect","1"));
-//        updateMessage(String.format(Locale.ENGLISH, "Disconnect %s, status=%d", devAddr, status),
-//                false);
+        // 连接失败，通知等待连接的线程
+        if (mConnectLatch != null && mConnectLatch.getCount() > 0) {
+          mConnectResult = false;
+          mConnectLatch.countDown();
+        }
       }
     }
 
@@ -342,12 +489,10 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
     public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
       mLog.d(String.format(Locale.ENGLISH, "onMtuChanged status=%d, mtu=%d", status, mtu));
       if (status == BluetoothGatt.GATT_SUCCESS) {
-        mBlufiClient.setPostPackageLengthLimit(20);
-//        updateMessage(makeJson("peripheral_disconnect","1"));
-//        updateMessage(String.format(Locale.ENGLISH, "Set mtu complete, mtu=%d ", mtu), false);
+        // 参考 BlufiActivity，不设置包长度限制，使用默认值
+        // mBlufiClient.setPostPackageLengthLimit(maxLength);
       } else {
         mBlufiClient.setPostPackageLengthLimit(20);
-//        updateMessage(String.format(Locale.ENGLISH, "Set mtu failed, mtu=%d, status=%d", mtu, status), false);
       }
 
       onGattServiceCharacteristicDiscovered();
@@ -357,9 +502,9 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
     public void onServicesDiscovered(BluetoothGatt gatt, int status) {
       mLog.d(String.format(Locale.ENGLISH, "onServicesDiscovered status=%d", status));
       if (status != BluetoothGatt.GATT_SUCCESS) {
+        mLog.w("Discover services failed, disconnecting");
         gatt.disconnect();
-        updateMessage(makeJson("discover_services","1"));
-//        updateMessage(String.format(Locale.ENGLISH, "Discover services error status %d", status));
+        updateMessage(makeJson("discover_services","0"));
       }
     }
 
@@ -368,159 +513,178 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
       mLog.d(String.format(Locale.ENGLISH, "onDescriptorWrite status=%d", status));
       if (descriptor.getUuid().equals(BlufiParameter.UUID_NOTIFICATION_DESCRIPTOR) &&
               descriptor.getCharacteristic().getUuid().equals(BlufiParameter.UUID_NOTIFICATION_CHARACTERISTIC)) {
-        String msg = String.format(Locale.ENGLISH, "Set notification enable %s", (status == BluetoothGatt.GATT_SUCCESS ? " complete" : " failed"));
-//        updateMessage(msg);
+        if (status == BluetoothGatt.GATT_SUCCESS) {
+          mLog.d("Notification enabled successfully");
+        } else {
+          mLog.w("Failed to enable notification");
+        }
       }
     }
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
       if (status != BluetoothGatt.GATT_SUCCESS) {
+        mLog.w("Characteristic write failed, disconnecting");
         gatt.disconnect();
-//        updateMessage(String.format(Locale.ENGLISH, "WriteChar error status %d", status));
       }
     }
   }
 
+  /**
+   * Blufi 回调处理类
+   * 处理来自 BlufiClient 的各种回调事件
+   */
   private class BlufiCallbackMain extends BlufiCallback {
-    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
+    /**
+     * GATT 准备完成回调
+     * @param client BlufiClient 实例
+     * @param status 状态码
+     * @param gatt BluetoothGatt 实例
+     */
     @Override
-    public void onGattPrepared(BlufiClient client, BluetoothGatt gatt, BluetoothGattService service,
-                               BluetoothGattCharacteristic writeChar, BluetoothGattCharacteristic notifyChar) {
-      if (service == null) {
-        mLog.w("Discover service failed");
-        gatt.disconnect();
-//        updateMessage("Discover service failed");
-        updateMessage(makeJson("discover_service","0"));
-        return;
-      }
-      if (writeChar == null) {
-        mLog.w("Get write characteristic failed");
-        gatt.disconnect();
-//        updateMessage("Get write characteristic failed");
-        updateMessage(makeJson("get_write_characteristic","0"));
-        return;
-      }
-      if (notifyChar == null) {
-        mLog.w("Get notification characteristic failed");
-        gatt.disconnect();
-//        updateMessage("Get notification characteristic failed");
-        updateMessage(makeJson("get_notification_characteristic","0"));
-        return;
-      }
-      updateMessage(makeJson("discover_service","1"));
-//      updateMessage("Discover service and characteristics success");
-
-      int mtu = BlufiConstants.DEFAULT_MTU_LENGTH;
-      mLog.d("Request MTU " + mtu);
-      boolean requestMtu = false;
-      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-        requestMtu = gatt.requestMtu(mtu);
-        updateMessage(makeJson("request_mtu","1"));
-      }
-      if (!requestMtu) {
-        mLog.w("Request mtu failed");
-        updateMessage(makeJson("request_mtu","0"));
-//        updateMessage(String.format(Locale.ENGLISH, "Request mtu %d failed", mtu));
-        onGattServiceCharacteristicDiscovered();
+    public void onGattPrepared(BlufiClient client, int status, BluetoothGatt gatt) {
+      switch (status) {
+        case STATUS_SUCCESS:
+          updateMessage(makeJson("discover_service","1"));
+          int mtu = BlufiConstants.DEFAULT_MTU_LENGTH;
+          mLog.d("Request MTU " + mtu);
+          boolean requestMtu = gatt.requestMtu(mtu);
+          if (!requestMtu) {
+            mLog.w("Request mtu failed");
+            updateMessage(makeJson("request_mtu","0"));
+            onGattServiceCharacteristicDiscovered();
+          } else {
+            updateMessage(makeJson("request_mtu","1"));
+          }
+          break;
+        case CODE_GATT_DISCOVER_SERVICE_FAILED:
+          mLog.w("Discover service failed");
+          gatt.disconnect();
+          updateMessage(makeJson("discover_service","0"));
+          break;
+        case CODE_GATT_DISCOVER_WRITE_CHAR_FAILED:
+          mLog.w("Get write characteristic failed");
+          gatt.disconnect();
+          updateMessage(makeJson("get_write_characteristic","0"));
+          break;
+        case CODE_GATT_DISCOVER_NOTIFY_CHAR_FAILED:
+          mLog.w("Get notification characteristic failed");
+          gatt.disconnect();
+          updateMessage(makeJson("get_notification_characteristic","0"));
+          break;
+        case CODE_GATT_ERR_OPEN_NOTIFY:
+          mLog.w("Open notify function failed");
+          gatt.disconnect();
+          updateMessage(makeJson("open_notify","0"));
+          break;
+        default:
+          mLog.w("onGattPrepared unknown status: " + status);
+          gatt.disconnect();
+          updateMessage(makeJson("gatt_prepared","0"));
+          break;
       }
     }
 
+    /**
+     * 安全协商结果回调
+     * @param client BlufiClient 实例
+     * @param status 状态码，STATUS_SUCCESS 表示成功
+     */
     @Override
     public void onNegotiateSecurityResult(BlufiClient client, int status) {
       if (status == STATUS_SUCCESS) {
-//        updateMessage("Negotiate security complete");
+        mSecurityNegotiated = true;
+        mLog.d("Negotiate security complete");
         updateMessage(makeJson("negotiate_security","1"));
       } else {
-//        updateMessage("Negotiate security failed， code=" + status);
+        mSecurityNegotiated = false;
+        mLog.w("Negotiate security failed, code=" + status);
         updateMessage(makeJson("negotiate_security","0"));
       }
     }
 
+    /**
+     * 配网参数发送结果回调
+     * @param client BlufiClient 实例
+     * @param status 状态码，STATUS_SUCCESS 表示成功
+     */
     @Override
     public void onPostConfigureParams(BlufiClient client, int status) {
       if (status == STATUS_SUCCESS) {
-//        updateMessage("Post configure params complete");
+        mLog.d("Station mode configuration complete, device will attempt to connect to WiFi");
         updateMessage(makeJson("configure_params","1"));
+        // Note: Device needs time to connect to WiFi, status will be checked separately
       } else {
+        mLog.w("Station mode configuration failed, code=" + status);
         updateMessage(makeJson("configure_params","0"));
       }
     }
 
+    /**
+     * 设备状态响应回调
+     * @param client BlufiClient 实例
+     * @param status 状态码，STATUS_SUCCESS 表示成功
+     * @param response 设备状态响应，包含 WiFi 连接状态等信息
+     */
     @Override
     public void onDeviceStatusResponse(BlufiClient client, int status, BlufiStatusResponse response) {
       if (status == STATUS_SUCCESS) {
         updateMessage(makeJson("device_status","1"));
-//        updateMessage(String.format("Receive device status response:\n%s"));
-        if (response.isStaConnectWifi()){
+        // Check if station is connected to WiFi
+        if (response.isStaConnectWifi()) {
           updateMessage(makeJson("device_wifi_connect","1"));
+          mLog.d("Device connected to WiFi");
         } else {
           updateMessage(makeJson("device_wifi_connect","0"));
+          mLog.d("Device not connected to WiFi");
         }
       } else {
+        mLog.w("Device status response error, code=" + status);
         updateMessage(makeJson("device_status","0"));
-//        updateMessage("Device status response error, code=" + status);
       }
     }
 
+    /**
+     * 设备 WiFi 扫描结果回调
+     * @param client BlufiClient 实例
+     * @param status 状态码，STATUS_SUCCESS 表示成功
+     * @param results WiFi 扫描结果列表
+     */
     @Override
     public void onDeviceScanResult(BlufiClient client, int status, List<BlufiScanResult> results) {
       if (status == STATUS_SUCCESS) {
-//        StringBuilder msg = new StringBuilder();
-//        msg.append("Receive device scan result:\n");
         for (BlufiScanResult scanResult : results) {
-//          msg.append(scanResult.toString()).append("\n");
-          updateMessage(makeWifiInfoJson(scanResult.getSsid(),scanResult.getRssi()));
+          updateMessage(makeWifiInfoJson(scanResult.getSsid(), scanResult.getRssi()));
         }
-//        updateMessage(msg.toString());
       } else {
+        mLog.w("Device scan result error, code=" + status);
         updateMessage(makeJson("wifi_info","0"));
-//        updateMessage("Device scan result error, code=" + status);
       }
     }
 
-    @Override
-    public void onDeviceVersionResponse(BlufiClient client, int status, BlufiVersionResponse response) {
-      if (status == STATUS_SUCCESS) {
-        updateMessage(makeJson("device_version",response.getVersionString()));
-//        updateMessage(String.format("Receive device version: %s", response.getVersionString()));
-      } else {
-        updateMessage(makeJson("device_version","0"));
-//        updateMessage("Device version error, code=" + status);
-      }
 
-    }
-
-    @Override
-    public void onPostCustomDataResult(BlufiClient client, int status, byte[] data) {
-      String dataStr = new String(data);
-      String format = "Post data %s %s";
-      if (status == STATUS_SUCCESS) {
-        updateMessage(makeJson("post_custom_data","1"));
-//        updateMessage(String.format(format, dataStr, "complete"));
-      } else {
-        updateMessage(makeJson("post_custom_data","0"));
-//        updateMessage(String.format(format, dataStr, "failed"));
-      }
-    }
-
-    @Override
-    public void onReceiveCustomData(BlufiClient client, int status, byte[] data) {
-      if (status == STATUS_SUCCESS) {
-        String customStr = new String(data);
-          customStr = customStr.replace("\"","\\\"");
-//        updateMessage(String.format("Receive custom data:\n%s", customStr));
-        updateMessage(makeJson("receive_device_custom_data",customStr));
-      } else {
-        updateMessage(makeJson("receive_device_custom_data","0"));
-//        updateMessage("Receive custom data error, code=" + status);
-      }
-    }
-
+    /**
+     * 错误回调
+     * @param client BlufiClient 实例
+     * @param errCode 错误码，0 表示无错误
+     */
     @Override
     public void onError(BlufiClient client, int errCode) {
-      updateMessage(makeJson("receive_error_code",errCode + ""));
-//      updateMessage(String.format(Locale.ENGLISH, "Receive error code %d", errCode));
+      // Error code 0 means no error/success, can be ignored
+      if (errCode == 0) {
+        mLog.d("Device reported error code 0 (no error/success)");
+        return;
+      }
+
+      mLog.w(String.format(Locale.ENGLISH, "Device reported error code: %d", errCode));
+      updateMessage(makeJson("receive_error_code", String.valueOf(errCode)));
+
+      // Handle critical errors
+      if (errCode == CODE_GATT_WRITE_TIMEOUT) {
+        mLog.w("GATT write timeout, closing connection");
+        client.close();
+        onGattDisconnected();
+      }
     }
   }
 
@@ -549,8 +713,7 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
   }
 
   private String makeScanDeviceJson(String address, String name, int rssi) {
-
-    return String.format("{\"key\":\"ble_scan_result\",\"value\":{\"address\":\"%s\",\"name\":\"%s\",\"rssi\":\"%s\"}}", address, name,rssi);
+    return String.format("{\"key\":\"ble_scan_result\",\"value\":{\"address\":\"%s\",\"name\":\"%s\",\"rssi\":\"%s\"}}", address, name, rssi);
   }
 
   private String makeWifiInfoJson(String ssid, int rssi) {
@@ -560,6 +723,7 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
     }
     return String.format("{\"key\":\"wifi_info\",\"value\":{\"ssid\":\"%s\",\"rssi\":\"%s\",\"address\":\"%s\"}}", ssid, rssi, address);
   }
+
 
   @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
   private class ScanCallback extends android.bluetooth.le.ScanCallback {
