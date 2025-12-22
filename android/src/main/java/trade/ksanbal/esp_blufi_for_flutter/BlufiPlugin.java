@@ -520,7 +520,6 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
         }
       }
     }
-
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
       if (status != BluetoothGatt.GATT_SUCCESS) {

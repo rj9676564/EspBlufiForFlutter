@@ -235,10 +235,10 @@ class _MyAppState extends State<MyApp> {
                   // }
                   // 配置 WiFi 信息，请修改为你的 WiFi SSID 和密码
                   print('Starting configuration with WiFi: hmop');
-                  // await BlufiPlugin.instance
-                  //     .configProvision(username: '小店掌柜', password: 'juhesaas2023');
                   await BlufiPlugin.instance
-                      .configProvision(username: 'blu', password: '88888888');
+                      .configProvision(username: '小店掌柜', password: 'juhesaas2023');
+                  // await BlufiPlugin.instance
+                  //     .configProvision(username: 'blu', password: '88888888');
                 },
                 child: Text('Config Provision (WiFi: hmop)')),
             TextButton(

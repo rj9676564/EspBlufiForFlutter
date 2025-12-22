@@ -14,8 +14,8 @@ EXTERNAL SOURCES:
     :path: Flutter
 
 SPEC CHECKSUMS:
-  esp_blufi_for_flutter: 7f501cb945145bf412417f9fcf8a939fb506b7d1
-  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  esp_blufi_for_flutter: 65bbe7488bb54b525dfcc089ba6eba57782d4d20
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
 
 PODFILE CHECKSUM: d85ddc5f90e8c593f9dc16ef40fc88253b4f8f6b
 

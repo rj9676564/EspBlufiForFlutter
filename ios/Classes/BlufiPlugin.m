@@ -77,12 +77,11 @@
 
 
 /**
- * 连接蓝牙设备
- * @param perripheral 要连接的蓝牙设备
+ * 通过设备 ID 连接蓝牙设备
+ * @param deviceId 设备 ID (UUID 字符串)
  */
-- (void)connectPeripheral:(ESPPeripheral *)perripheral {
+- (void)connectPeripheralWithId:(NSString *)deviceId {
     self.connected = NO;
-    self.device = perripheral;
     
     if (_blufiClient) {
         [_blufiClient close];
@@ -93,7 +92,17 @@
     _blufiClient.centralManagerDelete = self;
     _blufiClient.peripheralDelegate = self;
     _blufiClient.blufiDelegate = self;
-    [_blufiClient connect:_device.uuid.UUIDString];
+    [_blufiClient connect:deviceId];
+}
+
+/**
+ * 连接蓝牙设备（保留方法，用于向后兼容）
+ * @param perripheral 要连接的蓝牙设备
+ */
+- (void)connectPeripheral:(ESPPeripheral *)perripheral {
+    if (perripheral != nil) {
+        [self connectPeripheralWithId:perripheral.uuid.UUIDString];
+    }
 }
 
 /**
@@ -355,8 +364,15 @@
     }
     // 连接蓝牙设备
     else if ([@"connectPeripheral" isEqualToString:call.method]) {
-        NSString *peripheral = call.arguments[@"peripheral"];
-        [self connectPeripheral:self.peripheralDictionary[peripheral]];
+        NSString *peripheralId = call.arguments[@"peripheral"];
+        if (peripheralId != nil) {
+            // 直接通过设备 ID (UUID) 连接，不依赖扫描结果字典
+            [self connectPeripheralWithId:peripheralId];
+        } else {
+            result([FlutterError errorWithCode:@"INVALID_ARGUMENT"
+                                       message:@"Device address cannot be null"
+                                       details:nil]);
+        }
     }
     // 请求关闭连接
     else if ([@"requestCloseConnection" isEqualToString:call.method]) {
