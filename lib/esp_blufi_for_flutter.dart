@@ -6,7 +6,8 @@ typedef ResultCallback = void Function(String? data);
 
 class BlufiPlugin {
   final MethodChannel? _channel = const MethodChannel('esp_blufi_for_flutter');
-  final EventChannel _eventChannel = EventChannel('esp_blufi_for_flutter/state');
+  final EventChannel _eventChannel =
+      EventChannel('esp_blufi_for_flutter/state');
 
   BlufiPlugin._() {
     _channel!.setMethodCallHandler(null);
@@ -25,7 +26,8 @@ class BlufiPlugin {
   /// 设置消息接收回调
   /// [successCallback] 成功回调，接收来自原生平台的消息
   /// [errorCallback] 错误回调，接收错误信息
-  void onMessageReceived({ResultCallback? successCallback, ResultCallback? errorCallback}) {
+  void onMessageReceived(
+      {ResultCallback? successCallback, ResultCallback? errorCallback}) {
     _resultSuccessCallback = successCallback;
     _resultErrorCallback = errorCallback;
   }
@@ -40,8 +42,8 @@ class BlufiPlugin {
   /// [filterString] 过滤字符串，用于过滤设备名称
   /// 返回 true 表示开始扫描，false 表示扫描失败
   Future<bool?> scanDeviceInfo({String? filterString}) async {
-    final bool? isEnable =
-        await _channel!.invokeMethod('scanDeviceInfo', <String, dynamic>{'filter': filterString});
+    final bool? isEnable = await _channel!.invokeMethod(
+        'scanDeviceInfo', <String, dynamic>{'filter': filterString});
     return isEnable;
   }
 
@@ -52,14 +54,17 @@ class BlufiPlugin {
 
   /// 连接蓝牙设备
   /// [peripheralAddress] 设备地址（MAC地址）
-  Future connectPeripheral({String? peripheralAddress}) async {
-    await _channel!
-        .invokeMethod('connectPeripheral', <String, dynamic>{'peripheral': peripheralAddress});
+  Future<bool?> connectPeripheral({String? peripheralAddress}) async {
+    final bool? result = await _channel!.invokeMethod<bool>('connectPeripheral',
+        <String, dynamic>{'peripheral': peripheralAddress});
+    return result ?? false;
   }
 
   /// 请求关闭连接
   Future requestCloseConnection() async {
-    await _channel!.invokeMethod('requestCloseConnection');
+    final bool? result =
+        await _channel!.invokeMethod<bool>('requestCloseConnection');
+    return result ?? false;
   }
 
   /// 协商安全加密
@@ -77,8 +82,9 @@ class BlufiPlugin {
   /// [username] WiFi SSID（WiFi名称）
   /// [password] WiFi 密码
   Future configProvision({String? username, String? password}) async {
-    await _channel!.invokeMethod(
-        'configProvision', <String, dynamic>{'username': username, 'password': password});
+    final bool? result = await _channel!.invokeMethod<bool>('configProvision',
+        <String, dynamic>{'username': username, 'password': password});
+    return result ?? false;
   }
 
   /// 请求设备当前状态
@@ -96,7 +102,8 @@ class BlufiPlugin {
   /// 发送自定义数据到设备
   /// [dataStr] 自定义数据字符串
   Future postCustomData(String dataStr) async {
-    await _channel!.invokeMethod('postCustomData', <String, dynamic>{'custom_data': dataStr});
+    await _channel!.invokeMethod(
+        'postCustomData', <String, dynamic>{'custom_data': dataStr});
   }
 
   speechResultsHandler(dynamic event) {

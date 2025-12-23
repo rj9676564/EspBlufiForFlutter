@@ -276,20 +276,28 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
     mBlufiClient.connect();
     mLog.d("Connecting to device: " + device.getAddress());
 
-    // 等待连接结果，超时时间 10 秒
+    // 等待连接结果，超时时间 30 秒
+    // 注意：Flutter method call 在后台线程执行，蓝牙回调在主线程，所以不会死锁
     try {
-      boolean awaitResult = mConnectLatch.await(10, TimeUnit.SECONDS);
+      mLog.d("Waiting for connection result, timeout: 30 seconds");
+      long startTime = System.currentTimeMillis();
+      boolean awaitResult = mConnectLatch.await(30, TimeUnit.SECONDS);
+      long elapsedTime = System.currentTimeMillis() - startTime;
+      
       if (!awaitResult) {
-        mLog.w("Connection timeout");
+        mLog.w("Connection timeout after " + elapsedTime + "ms");
         return false;
       }
+      
+      mLog.d("Connection result received after " + elapsedTime + "ms, result: " + mConnectResult);
       return mConnectResult;
     } catch (InterruptedException e) {
-      mLog.w("Connection interrupted");
+      mLog.w("Connection interrupted: " + e.getMessage());
       Thread.currentThread().interrupt();
       return false;
     } finally {
       mConnectLatch = null;
+      mLog.d("Connection sync completed, latch cleared");
     }
   }
 
@@ -425,7 +433,8 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
     mConnected = true;
     mConnectResult = true;
     // 通知等待连接的线程
-    if (mConnectLatch != null) {
+    if (mConnectLatch != null && mConnectLatch.getCount() > 0) {
+      mLog.d("Connection successful, notifying waiting thread");
       mConnectLatch.countDown();
     }
   }
@@ -461,6 +470,7 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
       if (status == BluetoothGatt.GATT_SUCCESS) {
         switch (newState) {
           case BluetoothProfile.STATE_CONNECTED:
+            mLog.d("STATE_CONNECTED received, calling onGattConnected");
             onGattConnected();
             updateMessage(makeJson("peripheral_connect","1"));
             mLog.d("Connected to device: " + devAddr);

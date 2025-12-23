@@ -20,6 +20,9 @@
 @property(strong, nonatomic)BlufiClient *blufiClient;
 @property(assign, atomic)BOOL connected;
 @property(nonatomic, retain) BlufiPluginStreamHandler *stateStreamHandler;
+// result callback
+@property(nonatomic, strong) FlutterResult flutterResult;
+@property(nonatomic, strong) FlutterMethodCall *flutterMethodCall;
 @end
 
 @implementation BlufiPlugin
@@ -77,7 +80,42 @@
 
 
 /**
- * 通过设备 ID 连接蓝牙设备
+ * 通过设备 ID 连接蓝牙设备（同步方法）
+ * @param deviceId 设备 ID (UUID 字符串)
+ * @return YES 连接成功，NO 连接失败或超时
+ */
+- (void)connectPeripheralSyncWithId:(NSString *)deviceId {
+    self.connected = NO;
+    
+    if (_blufiClient) {
+        [_blufiClient close];
+        _blufiClient = nil;
+    }
+    
+    _blufiClient = [[BlufiClient alloc] init];
+    _blufiClient.centralManagerDelete = self;
+    _blufiClient.peripheralDelegate = self;
+    _blufiClient.blufiDelegate = self;
+    [_blufiClient connect:deviceId];
+
+    // 等待连接结果，超时时间 10 秒
+    // dispatch_time_t timeout = dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
+    // long waitResult = dispatch_semaphore_wait(self.connectSemaphore, timeout);
+    
+    // if (waitResult != 0) {
+    //     // 超时
+    //     NSLog(@"Connection timeout");
+    //     self.connectSemaphore = nil;
+    //     return NO;
+    // }
+    
+    // BOOL result = self.connectResult;
+    // self.connectSemaphore = nil;
+    // return result;
+}
+
+/**
+ * 通过设备 ID 连接蓝牙设备（异步方法，保留用于内部调用）
  * @param deviceId 设备 ID (UUID 字符串)
  */
 - (void)connectPeripheralWithId:(NSString *)deviceId {
@@ -149,7 +187,8 @@
  * @param password WiFi 密码
  */
 -(void)configProvisionWithSSID: (NSString *)ssid password:(NSString *)password {
-     BlufiConfigureParams *params = [[BlufiConfigureParams alloc] init];
+    
+    BlufiConfigureParams *params = [[BlufiConfigureParams alloc] init];
     params.opMode = OpModeSta;
     params.staSsid = ssid;
     params.staPassword = password;
@@ -201,11 +240,13 @@
 
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
     [self updateMessage:[self makeJsonWithCommand:@"peripheral_connect" data:@"1"]];
+    self.flutterResult(@(YES));
 }
 
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
     [self updateMessage:[self makeJsonWithCommand:@"peripheral_connect" data:@"0"]];
     self.connected = NO;
+    self.flutterResult(@(NO));
 }
 
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
@@ -268,8 +309,12 @@
         
         if ([response isStaConnectWiFi]) {
           [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"1"]];
+          self.connected = YES;
+          self.flutterResult(@(YES));
         } else {
                 [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"0"]];
+                self.connected = NO;
+                self.flutterResult(@(NO));
       }
     } else {
         [self updateMessage:[self makeJsonWithCommand:@"device_status" data:@"0"]];
@@ -346,6 +391,8 @@
  */
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
   // 获取平台版本
+  self.flutterResult = result;
+  self.flutterMethodCall = call;
   if ([@"getPlatformVersion" isEqualToString:call.method]) {
     result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
     // 扫描蓝牙设备
@@ -367,11 +414,11 @@
         NSString *peripheralId = call.arguments[@"peripheral"];
         if (peripheralId != nil) {
             // 直接通过设备 ID (UUID) 连接，不依赖扫描结果字典
-            [self connectPeripheralWithId:peripheralId];
+            [self connectPeripheralSyncWithId:peripheralId];
+            
         } else {
-            result([FlutterError errorWithCode:@"INVALID_ARGUMENT"
-                                       message:@"Device address cannot be null"
-                                       details:nil]);
+            self.flutterResult(@(NO));
+
         }
     }
     // 请求关闭连接

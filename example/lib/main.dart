@@ -206,8 +206,13 @@ class _MyAppState extends State<MyApp> {
                   isSecurityNegotiated = false;
                   String address = scanResult.keys.first;
                   print('Manually connecting to: ${scanResult[address]} ($address)');
-                  await BlufiPlugin.instance.connectPeripheral(
+                  bool? result =  await BlufiPlugin.instance.connectPeripheral(
                       peripheralAddress: address);
+                  print('Connect result: $result');
+                  if (result != null && result) {
+                    isConnected = true;
+                    connectedDeviceAddress = address;
+                  }
                 },
                 child: Text('Connect Peripheral (Manual)')),
             TextButton(
@@ -220,27 +225,33 @@ class _MyAppState extends State<MyApp> {
                 child: Text('Close Connect')),
             TextButton(
                 onPressed: () async {
+
+                  bool? result =  await BlufiPlugin.instance.connectPeripheral(
+                      peripheralAddress: "A824547A-36DC-784B-DCC9-B7D34CE997D3");
+                },child: Text("ss "),),
+
+            TextButton(
+                onPressed: () async {
                   if (!isConnected) {
                     print('Device not connected, please scan first and wait for auto-connect');
                     return;
                   }
-                  // if (!isSecurityNegotiated) {
-                  //   print('Security not negotiated, please wait... (this should happen automatically)');
-                  //   // 如果安全协商还没完成，等待一下再试
-                  //   await Future.delayed(Duration(seconds: 1));
-                  //   if (!isSecurityNegotiated) {
-                  //     print('Security negotiation timeout, please try again');
-                  //     return;
-                  //   }
-                  // }
-                  // 配置 WiFi 信息，请修改为你的 WiFi SSID 和密码
                   print('Starting configuration with WiFi: hmop');
                   await BlufiPlugin.instance
                       .configProvision(username: '小店掌柜', password: 'juhesaas2023');
-                  // await BlufiPlugin.instance
-                  //     .configProvision(username: 'blu', password: '88888888');
+
                 },
-                child: Text('Config Provision (WiFi: hmop)')),
+                child: Text('Config Provision (WiFi: 小店掌柜)')),
+            TextButton(
+                onPressed: () async {
+                  if (!isConnected) {
+                    print('Device not connected, please scan first and wait for auto-connect');
+                    return;
+                  }
+                  await BlufiPlugin.instance
+                      .configProvision(username: 'blu', password: '88888888');
+                },
+                child: Text('Config Provision (WiFi: blu)')),
             TextButton(
                 onPressed: () async {
                   if (!isConnected) {
