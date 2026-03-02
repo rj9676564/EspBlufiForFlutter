@@ -1040,9 +1040,6 @@ enum {
 - (void)centralManagerDidUpdateState:(nonnull CBCentralManager *)central {
     if (@available(iOS 10.0, *)) {
         _blePowerOn = central.state == CBManagerStatePoweredOn;
-    } else {
-        _blePowerOn = central.state == CBCentralManagerStatePoweredOn;
-        // Fallback on earlier versions
     }
     if (_blePowerOn) {
         NSLog(@"Blufi Client BLE state pwoered on");

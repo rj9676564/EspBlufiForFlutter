@@ -37,7 +37,7 @@
     BlufiPluginStreamHandler* stateStreamHandler = [[BlufiPluginStreamHandler alloc] init];
      [stateChannel setStreamHandler:stateStreamHandler];
      instance.stateStreamHandler = stateStreamHandler;
-    
+
   [registrar addMethodCallDelegate:instance channel:channel];
 }
 
@@ -56,7 +56,7 @@
  */
 - (void)scanDeviceInfo {
     [self.espFBYBleHelper startScan:^(ESPPeripheral * _Nonnull device) {
-        
+
         if (device.name == nil) return;
 
         if (self.filterContent != nil && ![self.filterContent isKindOfClass:[NSNull class]] &&
@@ -64,7 +64,7 @@
             ![device.name.lowercaseString containsString:self.filterContent.lowercaseString]) {
             return;
         }
-        
+
         self.dataDictionary[device.uuid.UUIDString] = device;
         [self updateMessage:[self makeScanDeviceJsonWithAddress:device.uuid.UUIDString name:device.name rssi:device.rssi]];
     }];
@@ -86,12 +86,12 @@
  */
 - (void)connectPeripheralSyncWithId:(NSString *)deviceId {
     self.connected = NO;
-    
+
     if (_blufiClient) {
         [_blufiClient close];
         _blufiClient = nil;
     }
-    
+
     _blufiClient = [[BlufiClient alloc] init];
     _blufiClient.centralManagerDelete = self;
     _blufiClient.peripheralDelegate = self;
@@ -101,14 +101,14 @@
     // 等待连接结果，超时时间 10 秒
     // dispatch_time_t timeout = dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
     // long waitResult = dispatch_semaphore_wait(self.connectSemaphore, timeout);
-    
+
     // if (waitResult != 0) {
     //     // 超时
     //     NSLog(@"Connection timeout");
     //     self.connectSemaphore = nil;
     //     return NO;
     // }
-    
+
     // BOOL result = self.connectResult;
     // self.connectSemaphore = nil;
     // return result;
@@ -120,12 +120,12 @@
  */
 - (void)connectPeripheralWithId:(NSString *)deviceId {
     self.connected = NO;
-    
+
     if (_blufiClient) {
         [_blufiClient close];
         _blufiClient = nil;
     }
-    
+
     _blufiClient = [[BlufiClient alloc] init];
     _blufiClient.centralManagerDelete = self;
     _blufiClient.peripheralDelegate = self;
@@ -159,6 +159,7 @@
      if (_blufiClient) {
          [_blufiClient requestCloseConnection];
     }
+    self.flutterResult(@(YES));
 }
 
 /**
@@ -187,12 +188,12 @@
  * @param password WiFi 密码
  */
 -(void)configProvisionWithSSID: (NSString *)ssid password:(NSString *)password {
-    
+
     BlufiConfigureParams *params = [[BlufiConfigureParams alloc] init];
     params.opMode = OpModeSta;
     params.staSsid = ssid;
     params.staPassword = password;
-    
+
     if (_blufiClient && _connected) {
            [_blufiClient configure:params];
        }
@@ -223,7 +224,7 @@
  * @param data 自定义数据字符串
  */
 -(void)postCustomData:(NSString *) data {
-    
+
     if (_blufiClient && data != nil) {
         [_blufiClient postCustomData:[data dataUsingEncoding:NSUTF8StringEncoding]];
     }
@@ -252,11 +253,12 @@
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
     [self onDisconnected];
     [self updateMessage:[self makeJsonWithCommand:@"peripheral_disconnect" data:@"1"]];
+    self.flutterResult(@(NO));
     self.connected = NO;
 }
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
-    
+
 }
 
 - (void)blufi:(BlufiClient *)client gattPrepared:(BlufiStatusCode)status service:(CBService *)service writeChar:(CBCharacteristic *)writeChar notifyChar:(CBCharacteristic *)notifyChar {
@@ -277,7 +279,7 @@
 
 - (void)blufi:(BlufiClient *)client didNegotiateSecurity:(BlufiStatusCode)status {
     NSLog(@"Blufi didNegotiateSecurity %d", status);
-   
+
     if (status == StatusSuccess) {
         [self updateMessage:[self makeJsonWithCommand:@"negotiate_security" data:@"1"]];
     } else {
@@ -286,7 +288,7 @@
 }
 
 - (void)blufi:(BlufiClient *)client didReceiveDeviceVersionResponse:(BlufiVersionResponse *)response status:(BlufiStatusCode)status {
-    
+
     if (status == StatusSuccess) {
         [self updateMessage:[self makeJsonWithCommand:@"device_version" data:response.getVersionString]];
     } else {
@@ -297,32 +299,34 @@
 - (void)blufi:(BlufiClient *)client didPostConfigureParams:(BlufiStatusCode)status {
     if (status == StatusSuccess) {
         [self updateMessage:[self makeJsonWithCommand:@"configure_params" data:@"1"]];
+//        self.flutterResult(@(YES));
     } else {
         [self updateMessage:[self makeJsonWithCommand:@"configure_params" data:@"0"]];
+//        self.flutterResult(@(NO));
     }
 }
 
 - (void)blufi:(BlufiClient *)client didReceiveDeviceStatusResponse:(BlufiStatusResponse *)response status:(BlufiStatusCode)status {
-   
+
     if (status == StatusSuccess) {
         [self updateMessage:[self makeJsonWithCommand:@"device_status" data:@"1"]];
-        
-        if ([response isStaConnectWiFi]) {
+      if ([response isStaConnectWiFi]) {
           [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"1"]];
           self.connected = YES;
           self.flutterResult(@(YES));
-        } else {
-                [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"0"]];
-                self.connected = NO;
-                self.flutterResult(@(NO));
+      } else {
+          [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"0"]];
+          self.connected = NO;
+          self.flutterResult(@(NO));
       }
     } else {
         [self updateMessage:[self makeJsonWithCommand:@"device_status" data:@"0"]];
+        self.flutterResult(@(NO));
     }
 }
 
 - (void)blufi:(BlufiClient *)client didReceiveDeviceScanResponse:(NSArray<BlufiScanResponse *> *)scanResults status:(BlufiStatusCode)status {
-  
+
     if (status == StatusSuccess) {
 //        NSMutableString *info = [[NSMutableString alloc] init];
 //        [info appendString:@"Receive device scan results:\n"];
@@ -352,12 +356,12 @@
     else {
         [self updateMessage:[self makeJsonWithCommand:@"receive_device_custom_data" data:@"0"]];
     }
-   
+
 }
 
 - (void)updateMessage:(NSString *)message {
     NSLog(@"%@", message);
-    
+
     if(_stateStreamHandler.sink != nil) {
       self.stateStreamHandler.sink(message);
     }
@@ -368,7 +372,7 @@
     if (self.device != nil) {
         address = self.device.uuid.UUIDString;
     }
-    
+
     return [NSString stringWithFormat:@"{\"key\":\"%@\",\"value\":\"%@\",\"address\":\"%@\"}",command, data, address];
 }
 
@@ -397,13 +401,13 @@
     result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
     // 扫描蓝牙设备
     } else if ([@"scanDeviceInfo" isEqualToString:call.method]) {
-        
+
         NSString *filter = call.arguments[@"filter"];
         if (filter != nil) {
              self.filterContent = filter;
         }
         [self scanDeviceInfo];
-        
+
     }
     // 停止扫描蓝牙设备
     else if ([@"stopScan" isEqualToString:call.method]) {
@@ -415,7 +419,7 @@
         if (peripheralId != nil) {
             // 直接通过设备 ID (UUID) 连接，不依赖扫描结果字典
             [self connectPeripheralSyncWithId:peripheralId];
-            
+
         } else {
             self.flutterResult(@(NO));
 

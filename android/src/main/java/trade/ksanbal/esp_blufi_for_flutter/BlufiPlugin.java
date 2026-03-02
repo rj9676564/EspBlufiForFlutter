@@ -74,7 +74,8 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
   private final BlufiLog mLog = new BlufiLog(getClass());
   private MethodChannel channel;
   private Handler handler;
-
+  private MethodCall methodCall;
+  private Result methodResult;
 
 
   @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
@@ -108,6 +109,8 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
    */
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+    this.methodCall = call;
+    this.methodResult = result;
     // 获取平台版本
     if (call.method.equals("getPlatformVersion")) {
       result.success("Android " + Build.VERSION.RELEASE);
@@ -175,7 +178,6 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
         return;
       }
       configure(ssid, password != null ? password : "");
-      result.success(true);
     }
     // 请求设备当前状态
     else if (call.method.equals("requestDeviceStatus")) {
@@ -283,12 +285,12 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
       long startTime = System.currentTimeMillis();
       boolean awaitResult = mConnectLatch.await(30, TimeUnit.SECONDS);
       long elapsedTime = System.currentTimeMillis() - startTime;
-      
+
       if (!awaitResult) {
         mLog.w("Connection timeout after " + elapsedTime + "ms");
         return false;
       }
-      
+
       mLog.d("Connection result received after " + elapsedTime + "ms, result: " + mConnectResult);
       return mConnectResult;
     } catch (InterruptedException e) {
@@ -432,6 +434,7 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
   private void onGattConnected() {
     mConnected = true;
     mConnectResult = true;
+    this.methodResult.success(true);
     // 通知等待连接的线程
     if (mConnectLatch != null && mConnectLatch.getCount() > 0) {
       mLog.d("Connection successful, notifying waiting thread");
@@ -442,6 +445,7 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
   private void onGattDisconnected() {
     mConnected = false;
     mSecurityNegotiated = false;
+    this.methodResult.success(false);
     // 如果正在等待连接，通知连接失败
     if (mConnectLatch != null && mConnectLatch.getCount() > 0) {
       mConnectResult = false;
@@ -643,9 +647,12 @@ public class BlufiPlugin implements FlutterPlugin, ActivityAware, MethodCallHand
         if (response.isStaConnectWifi()) {
           updateMessage(makeJson("device_wifi_connect","1"));
           mLog.d("Device connected to WiFi");
+          methodResult.success(true);
+
         } else {
           updateMessage(makeJson("device_wifi_connect","0"));
           mLog.d("Device not connected to WiFi");
+          methodResult.success(false);
         }
       } else {
         mLog.w("Device status response error, code=" + status);

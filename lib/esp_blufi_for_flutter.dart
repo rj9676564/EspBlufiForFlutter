@@ -75,7 +75,7 @@ class BlufiPlugin {
 
   /// 请求设备版本信息
   Future requestDeviceVersion() async {
-    await _channel!.invokeMethod('requestDeviceVersion');
+    await _channel!.invokeMethod('req®uestDeviceVersion');
   }
 
   /// 配置配网参数（Station模式）
