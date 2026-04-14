@@ -45,7 +45,6 @@
 - (instancetype)init {
   self = [super init];
   if (self) {
-    self.espFBYBleHelper = [ESPFBYBLEHelper share];
       self.filterContent = [ESPDataConversion loadBlufiScanFilter];
   }
   return self;
@@ -55,6 +54,9 @@
  * 扫描蓝牙设备
  */
 - (void)scanDeviceInfo {
+    if (self.espFBYBleHelper == nil) {
+        self.espFBYBleHelper = [ESPFBYBLEHelper share];
+    }
     [self.espFBYBleHelper startScan:^(ESPPeripheral * _Nonnull device) {
 
         if (device.name == nil) return;

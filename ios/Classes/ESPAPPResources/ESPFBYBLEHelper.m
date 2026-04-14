@@ -18,11 +18,16 @@ API_AVAILABLE(ios(10.0))
 
 @property (nonatomic, assign) CBManagerState peripheralState;
 
+@property (nonatomic, assign) BOOL scanRequested;
+
 @end
 
 @implementation ESPFBYBLEHelper
 
-- (void)ESPFBYBLEHelperInit {
+- (void)ensureCentralManager {
+    if (self.centralManager != nil) {
+        return;
+    }
     self.centralManager = [[CBCentralManager alloc]initWithDelegate:self queue:nil];
 }
 
@@ -32,18 +37,20 @@ API_AVAILABLE(ios(10.0))
     static dispatch_once_t oneToken;
     dispatch_once(&oneToken, ^{
         share = [[ESPFBYBLEHelper alloc]init];
-        [share ESPFBYBLEHelperInit];
     });
     return share;
 }
 
 - (void)stopScan {
+    self.scanRequested = NO;
     [self.centralManager stopScan];
 }
 
 - (void)startScan:(FBYBleDeviceBackBlock)device {
-    
     _bleScanSuccessBlock = device;
+    self.scanRequested = YES;
+    [self ensureCentralManager];
+
     if (@available(iOS 10.0, *)) {
         if (self.peripheralState ==  CBManagerStatePoweredOn)
         {
@@ -106,7 +113,9 @@ API_AVAILABLE(ios(10.0))
         {
             self.peripheralState = central.state;
             NSLog(@"%ld",(long)self.peripheralState);
-            [self.centralManager scanForPeripheralsWithServices:nil options:nil];
+            if (self.scanRequested) {
+                [self.centralManager scanForPeripheralsWithServices:nil options:nil];
+            }
         }
             break;
         default:

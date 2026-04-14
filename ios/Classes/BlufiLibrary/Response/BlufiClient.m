@@ -90,10 +90,16 @@ enum {
 
 @implementation BlufiClient
 
+- (void)ensureCentralManager {
+    if (_centralManager != nil) {
+        return;
+    }
+    _centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
+}
+
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
         _writeUUID = [CBUUID UUIDWithString:UUID_WRITE_CHAR];
         _writeCondition = [[NSCondition alloc] init];
         _notifyUUID = [CBUUID UUIDWithString:UUID_NOTIFY_CHAR];
@@ -187,6 +193,7 @@ enum {
         @throw [[NSException alloc] initWithName:@"NSStateException" reason:@"The BlufiClient is closed" userInfo:nil];
         return;
     }
+    [self ensureCentralManager];
     [self clearConnection];
     _identifier = [[NSUUID alloc] initWithUUIDString:identifier];
     if (_blePowerOn) {
