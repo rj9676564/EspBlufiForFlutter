@@ -13,6 +13,7 @@ API_AVAILABLE(ios(10.0))
 @interface ESPFBYBLEHelper ()<CBCentralManagerDelegate,CBPeripheralDelegate>
 
 @property (nonatomic, strong) CBCentralManager *centralManager;
+@property (nonatomic, strong) dispatch_queue_t centralQueue;
 
 @property (nonatomic, strong) NSMutableArray *peripherals;
 
@@ -28,7 +29,10 @@ API_AVAILABLE(ios(10.0))
     if (self.centralManager != nil) {
         return;
     }
-    self.centralManager = [[CBCentralManager alloc]initWithDelegate:self queue:nil];
+    if (self.centralQueue == nil) {
+        self.centralQueue = dispatch_queue_create("com.espressif.blufi.scan", DISPATCH_QUEUE_SERIAL);
+    }
+    self.centralManager = [[CBCentralManager alloc]initWithDelegate:self queue:self.centralQueue];
 }
 
 //单例模式

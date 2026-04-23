@@ -15,6 +15,8 @@
 #define PACKAGE_LENGTH_DEFAULT   128
 #define PACKAGE_LENGTH_MIN       20
 #define PACKAGE_HEADER_LENGTH    4
+#define GATT_WRITE_TIMEOUT       10.0
+#define RESPONSE_WAIT_TIMEOUT    10.0
 
 #define DBUG false
 
@@ -44,6 +46,8 @@ enum {
 
 - (id)dequeue;
 
+- (id)dequeueWithTimeout:(NSTimeInterval)timeout;
+
 - (void)cancel;
 
 @end
@@ -54,6 +58,7 @@ enum {
 
 @property(strong, nonatomic)NSOperationQueue *requestQueue;
 @property(strong, nonatomic)NSOperationQueue *callbackQueue;
+@property(strong, nonatomic)dispatch_queue_t centralQueue;
 
 @property(strong, nonatomic)NSUUID *identifier;
 
@@ -94,7 +99,7 @@ enum {
     if (_centralManager != nil) {
         return;
     }
-    _centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
+    _centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:_centralQueue];
 }
 
 - (instancetype)init {
@@ -106,6 +111,7 @@ enum {
         _callbackQueue = [NSOperationQueue mainQueue];
         _requestQueue = [[NSOperationQueue alloc] init];
         _requestQueue.maxConcurrentOperationCount = 1;
+        _centralQueue = dispatch_queue_create("com.espressif.blufi.central", DISPATCH_QUEUE_SERIAL);
         
         _bleConnectMark = NO;
         _blePowerOn = NO;
@@ -254,7 +260,10 @@ enum {
             NSLog(@"Blufi GattWrite Length: %lu,  %@", (unsigned long)data.length, data);
         }
         [_peripheral writeValue:data forCharacteristic:_writeChar type:CBCharacteristicWriteWithResponse];
-        [_writeCondition wait];
+        BOOL written = [_writeCondition waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:GATT_WRITE_TIMEOUT]];
+        if (!written) {
+            NSLog(@"Blufi GattWrite timeout");
+        }
         [_writeCondition unlock];
     }
 
@@ -263,7 +272,7 @@ enum {
 
 - (BOOL)receiveAck:(Byte)expectAck {
     NSLog(@"receiveAck expect: %d", expectAck);
-    NSNumber *number = [_deviceAck dequeue];
+    NSNumber *number = [_deviceAck dequeueWithTimeout:RESPONSE_WAIT_TIMEOUT];
     if (!number) {
         NSLog(@"receiveAck nil");
         return NO;
@@ -1008,7 +1017,7 @@ enum {
             }
             NSLog(@"negotiateSecurity DH posted");
             
-            NSData *deviceKey = [self.deviceKey dequeue];
+            NSData *deviceKey = [self.deviceKey dequeueWithTimeout:RESPONSE_WAIT_TIMEOUT];
             if (!deviceKey) {
                 NSLog(@"negotiateSecurity Recevie nil deviceKey");
                 code = StatusFailed;
@@ -1442,14 +1451,23 @@ enum {
 }
 
 - (id)dequeue {
+    return [self dequeueWithTimeout:RESPONSE_WAIT_TIMEOUT];
+}
+
+- (id)dequeueWithTimeout:(NSTimeInterval)timeout {
     __block id object;
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
     dispatch_sync(_dispatchQueue, ^{
         [self.lock lock];
         while (self.queue.count == 0) {
-            [self.lock wait];
+            if (![self.lock waitUntilDate:deadline]) {
+                break;
+            }
         }
-        object = [self.queue objectAtIndex:0];
-        [self.queue removeObjectAtIndex:0];
+        if (self.queue.count > 0) {
+            object = [self.queue objectAtIndex:0];
+            [self.queue removeObjectAtIndex:0];
+        }
         [self.lock unlock];
     });
     NSLog(@"device details object %@",object);

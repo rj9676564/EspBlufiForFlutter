@@ -28,102 +28,80 @@ class _MyAppState extends State<MyApp> {
     super.initState();
     initPlatformState();
 
-    BlufiPlugin.instance.onMessageReceived(
-        successCallback: (String? data) {
-          print("success data: $data");
-          setState(() {
-            contentJson = data ?? 'Unknown';
-            Map<String, dynamic> mapData = json.decode(data ?? '{}');
-            if (mapData.containsKey('key')) {
-              String key = mapData['key'];
-              if (key == 'ble_scan_result') {
-                Map<String, dynamic> peripheral = mapData['value'];
+    BlufiPlugin.instance.onMessageReceived(successCallback: (String? data) {
+      print("success data: $data");
+      setState(() {
+        contentJson = data ?? 'Unknown';
+        Map<String, dynamic> mapData = json.decode(data ?? '{}');
+        if (mapData.containsKey('key')) {
+          String key = mapData['key'];
+          if (key == 'ble_scan_result') {
+            Map<String, dynamic> peripheral = mapData['value'];
 
-                String address = peripheral['address'];
-                String name = peripheral['name'];
-                String rssi = peripheral['rssi'];
-                print(rssi);
-                scanResult[address] = name;
-
-                // 自动连接第一个扫描到的设备（如果还没有连接）
-                // if (!isConnected && scanResult.isNotEmpty) {
-                //   print('Auto connecting to first device: $name ($address)');
-                //   _autoConnectDevice(address);
-                // }
-              } else if (key == 'peripheral_connect' || key == 'blufi_connect_prepared') {
-                // 设备连接成功
-                String value = mapData['value'] ?? '';
-                if (value == '1') {
-                  isConnected = true;
-                  connectedDeviceAddress = mapData['address'];
-                  print('Device connected successfully');
-                }
-              } else if (key == 'negotiate_security') {
-                // 安全协商结果
-                String value = mapData['value'] ?? '';
-                if (value == '1') {
-                  isSecurityNegotiated = true;
-                  print('Security negotiated successfully');
-                } else {
-                  isSecurityNegotiated = false;
-                  print('Security negotiation failed');
-                }
-              } else if (key == 'configure_params') {
-                // 配网结果
-                String value = mapData['value'] ?? '';
-                if (value == '1') {
-                  print('Configuration successful');
-                  // 可以查询设备状态确认配网是否成功
-                  _checkDeviceStatus();
-                } else {
-                  print('Configuration failed');
-                }
-              } else if (key == 'device_wifi_connect') {
-                // WiFi连接状态
-                String value = mapData['value'] ?? '';
-                if (value == '1') {
-                  print('Device connected to WiFi successfully!');
-                } else {
-                  print('Device not connected to WiFi yet');
-                }
-              } else if (key == 'receive_error_code') {
-                // 设备错误码（0 表示无错误，其他值表示错误）
-                String value = mapData['value'] ?? '';
-                int errorCode = int.tryParse(value) ?? -1;
-                if (errorCode == 0) {
-                  print('Device status: No error (code 0)');
-                } else {
-                  print('⚠️ Device error code: $errorCode');
-                  // 显示常见错误码的含义
-                  String errorMsg = _getErrorMessage(errorCode);
-                  print('Error meaning: $errorMsg');
-                }
-              }
+            String address = peripheral['address'];
+            String name = peripheral['name'];
+            String rssi = peripheral['rssi'];
+            print(rssi);
+            scanResult[address] = name;
+          } else if (key == 'peripheral_connect' ||
+              key == 'blufi_connect_prepared') {
+            // 设备连接成功
+            String value = mapData['value'] ?? '';
+            if (value == '1') {
+              isConnected = true;
+              connectedDeviceAddress = mapData['address'];
+              print('Device connected successfully');
             }
-          });
-        },
-        errorCallback: (String? error) {
-          print("error: $error");
-        });
-  }
-
-  Future<void> _negotiateSecurity() async {
-    if (isConnected && !isSecurityNegotiated) {
-      print('Starting security negotiation...');
-      await BlufiPlugin.instance.negotiateSecurity();
-    }
+          } else if (key == 'negotiate_security') {
+            // 安全协商结果
+            String value = mapData['value'] ?? '';
+            if (value == '1') {
+              isSecurityNegotiated = true;
+              print('Security negotiated successfully');
+            } else {
+              isSecurityNegotiated = false;
+              print('Security negotiation failed');
+            }
+          } else if (key == 'configure_params') {
+            // 配网结果
+            String value = mapData['value'] ?? '';
+            if (value == '1') {
+              print('Configuration successful');
+              // 可以查询设备状态确认配网是否成功
+              _checkDeviceStatus();
+            } else {
+              print('Configuration failed');
+            }
+          } else if (key == 'device_wifi_connect') {
+            // WiFi连接状态
+            String value = mapData['value'] ?? '';
+            if (value == '1') {
+              print('Device connected to WiFi successfully!');
+            } else {
+              print('Device not connected to WiFi yet');
+            }
+          } else if (key == 'receive_error_code') {
+            // 设备错误码（0 表示无错误，其他值表示错误）
+            String value = mapData['value'] ?? '';
+            int errorCode = int.tryParse(value) ?? -1;
+            if (errorCode == 0) {
+              print('Device status: No error (code 0)');
+            } else {
+              print('⚠️ Device error code: $errorCode');
+              // 显示常见错误码的含义
+              String errorMsg = _getErrorMessage(errorCode);
+              print('Error meaning: $errorMsg');
+            }
+          }
+        }
+      });
+    }, errorCallback: (String? error) {
+      print("error: $error");
+    });
   }
 
   Future<void> _checkDeviceStatus() async {
     await BlufiPlugin.instance.requestDeviceStatus();
-  }
-
-  Future<void> _autoConnectDevice(String address) async {
-    try {
-      await BlufiPlugin.instance.connectPeripheral(peripheralAddress: address);
-    } catch (e) {
-      print('Auto connect failed: $e');
-    }
   }
 
   String _getErrorMessage(int errorCode) {
@@ -174,6 +152,7 @@ class _MyAppState extends State<MyApp> {
     // message was in flight, we want to discard the reply rather than calling
     // setState to update our non-existent appearance.
     if (!mounted) return;
+    print('Running on $platformVersion');
   }
 
   @override
@@ -183,113 +162,121 @@ class _MyAppState extends State<MyApp> {
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: Column(
-          children: [
-            TextButton(
+        body: SingleChildScrollView(
+          child: Column(
+            children: [
+              TextButton(
+                  onPressed: () async {
+                    await BlufiPlugin.instance
+                        .scanDeviceInfo(filterString: 'Q31PRO');
+                  },
+                  child: Text('Scan')),
+              TextButton(
+                  onPressed: () async {
+                    await BlufiPlugin.instance.stopScan();
+                  },
+                  child: Text('Stop Scan')),
+              TextButton(
+                  onPressed: () async {
+                    if (scanResult.isEmpty) {
+                      print('No device found, please scan first');
+                      return;
+                    }
+                    isConnected = false;
+                    isSecurityNegotiated = false;
+                    String address = scanResult.keys.first;
+                    print(
+                        'Manually connecting to: ${scanResult[address]} ($address)');
+                    bool? result = await BlufiPlugin.instance
+                        .connectPeripheral(peripheralAddress: address);
+                    print('Connect result: $result');
+                    if (result != null && result) {
+                      isConnected = true;
+                      connectedDeviceAddress = address;
+                    }
+                  },
+                  child: Text('Connect Peripheral (Manual)')),
+              TextButton(
+                  onPressed: () async {
+                    await BlufiPlugin.instance.requestCloseConnection();
+                    isConnected = false;
+                    isSecurityNegotiated = false;
+                    connectedDeviceAddress = null;
+                  },
+                  child: Text('Close Connect')),
+              TextButton(
                 onPressed: () async {
-                  await BlufiPlugin.instance
-                      .scanDeviceInfo(filterString: 'Q31PRO');
+                  await BlufiPlugin.instance.connectPeripheral(
+                      peripheralAddress:
+                          "A824547A-36DC-784B-DCC9-B7D34CE997D3");
                 },
-                child: Text('Scan')),
-            TextButton(
-                onPressed: () async {
-                  await BlufiPlugin.instance.stopScan();
-                },
-                child: Text('Stop Scan')),
-            TextButton(
-                onPressed: () async {
-                  if (scanResult.isEmpty) {
-                    print('No device found, please scan first');
-                    return;
-                  }
-                  isConnected = false;
-                  isSecurityNegotiated = false;
-                  String address = scanResult.keys.first;
-                  print('Manually connecting to: ${scanResult[address]} ($address)');
-                  bool? result =  await BlufiPlugin.instance.connectPeripheral(
-                      peripheralAddress: address);
-                  print('Connect result: $result');
-                  if (result != null && result) {
-                    isConnected = true;
-                    connectedDeviceAddress = address;
-                  }
-                },
-                child: Text('Connect Peripheral (Manual)')),
-            TextButton(
-                onPressed: () async {
-                  await BlufiPlugin.instance.requestCloseConnection();
-                  isConnected = false;
-                  isSecurityNegotiated = false;
-                  connectedDeviceAddress = null;
-                },
-                child: Text('Close Connect')),
-            TextButton(
-                onPressed: () async {
-
-                  bool? result =  await BlufiPlugin.instance.connectPeripheral(
-                      peripheralAddress: "A824547A-36DC-784B-DCC9-B7D34CE997D3");
-                },child: Text("ss "),),
-
-            TextButton(
-                onPressed: () async {
-                  if (!isConnected) {
-                    print('Device not connected, please scan first and wait for auto-connect');
-                    return;
-                  }
-                  print('Starting configuration with WiFi: hmop');
-                  await BlufiPlugin.instance
-                      .configProvision(username: '小店掌柜', password: 'juhesaas2023');
-
-                },
-                child: Text('Config Provision (WiFi: 小店掌柜)')),
-            TextButton(
-                onPressed: () async {
-                  if (!isConnected) {
-                    print('Device not connected, please scan first and wait for auto-connect');
-                    return;
-                  }
-                  await BlufiPlugin.instance
-                      .configProvision(username: 'blu', password: '88888888');
-                },
-                child: Text('Config Provision (WiFi: blu)')),
-            TextButton(
-                onPressed: () async {
-                  if (!isConnected) {
-                    print('Device not connected');
-                    return;
-                  }
-                  await BlufiPlugin.instance.requestDeviceStatus();
-                },
-                child: Text('Check Device Status')),
-            TextButton(
-                onPressed: () async {
-                  String command = '12345678';
-                  await BlufiPlugin.instance.postCustomData(command);
-                },
-                child: Text('Send Custom Data')),
-            TextButton(
-                onPressed: () async {
-                  await BlufiPlugin.instance.requestDeviceScan();
-                },
-                child: Text('Get wifi list')),
-            Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Status:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Connected: ${isConnected ? "Yes" : "No"}'),
-                  Text('Security Negotiated: ${isSecurityNegotiated ? "Yes" : "No"}'),
-                  Text('Devices Found: ${scanResult.length}'),
-                  if (connectedDeviceAddress != null)
-                    Text('Connected Device: $connectedDeviceAddress'),
-                  SizedBox(height: 8),
-                  Text('Latest Message:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(contentJson, style: TextStyle(fontSize: 12)),
-                ],
+                child: Text("ss "),
               ),
-            )
-          ],
+              TextButton(
+                  onPressed: () async {
+                    if (!isConnected) {
+                      print(
+                          'Device not connected, please scan first and wait for auto-connect');
+                      return;
+                    }
+                    print('Starting configuration with WiFi: hmop');
+                    await BlufiPlugin.instance.configProvision(
+                        username: '小店掌柜', password: 'juhesaas2023');
+                  },
+                  child: Text('Config Provision (WiFi: 小店掌柜)')),
+              TextButton(
+                  onPressed: () async {
+                    if (!isConnected) {
+                      print(
+                          'Device not connected, please scan first and wait for auto-connect');
+                      return;
+                    }
+                    await BlufiPlugin.instance
+                        .configProvision(username: 'blu', password: '88888888');
+                  },
+                  child: Text('Config Provision (WiFi: blu)')),
+              TextButton(
+                  onPressed: () async {
+                    if (!isConnected) {
+                      print('Device not connected');
+                      return;
+                    }
+                    await BlufiPlugin.instance.requestDeviceStatus();
+                  },
+                  child: Text('Check Device Status')),
+              TextButton(
+                  onPressed: () async {
+                    String command = '12345678';
+                    await BlufiPlugin.instance.postCustomData(command);
+                  },
+                  child: Text('Send Custom Data')),
+              TextButton(
+                  onPressed: () async {
+                    await BlufiPlugin.instance.requestDeviceScan();
+                  },
+                  child: Text('Get wifi list')),
+              Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Status:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text('Connected: ${isConnected ? "Yes" : "No"}'),
+                    Text(
+                        'Security Negotiated: ${isSecurityNegotiated ? "Yes" : "No"}'),
+                    Text('Devices Found: ${scanResult.length}'),
+                    if (connectedDeviceAddress != null)
+                      Text('Connected Device: $connectedDeviceAddress'),
+                    SizedBox(height: 8),
+                    Text('Latest Message:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(contentJson, style: TextStyle(fontSize: 12)),
+                  ],
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );

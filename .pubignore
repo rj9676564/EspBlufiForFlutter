@@ -2,6 +2,14 @@
 .DS_Store
 .dart_tool/
 .packages
+build/
+example/build/
+example/.dart_tool/
+example/.flutter-plugins-dependencies
+example/android/local.properties
+example/ios/Flutter/Generated.xcconfig
+example/ios/Flutter/flutter_export_environment.sh
+example/ios/Runner/GeneratedPluginRegistrant.*
 example/pubspec.lock
 pubspec.lock
 .idea/

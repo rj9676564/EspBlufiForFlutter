@@ -21,7 +21,7 @@
 @property(assign, atomic)BOOL connected;
 @property(nonatomic, retain) BlufiPluginStreamHandler *stateStreamHandler;
 // result callback
-@property(nonatomic, strong) FlutterResult flutterResult;
+@property(nonatomic, copy) FlutterResult flutterResult;
 @property(nonatomic, strong) FlutterMethodCall *flutterMethodCall;
 @end
 
@@ -161,7 +161,6 @@
      if (_blufiClient) {
          [_blufiClient requestCloseConnection];
     }
-    self.flutterResult(@(YES));
 }
 
 /**
@@ -189,16 +188,23 @@
  * @param ssid WiFi SSID（WiFi名称）
  * @param password WiFi 密码
  */
--(void)configProvisionWithSSID: (NSString *)ssid password:(NSString *)password {
+-(BOOL)configProvisionWithSSID: (NSString *)ssid password:(NSString *)password {
+    if (ssid == nil || ssid.length == 0) {
+        [self updateMessage:[self makeJsonWithCommand:@"configure_params" data:@"0"]];
+        return NO;
+    }
 
     BlufiConfigureParams *params = [[BlufiConfigureParams alloc] init];
     params.opMode = OpModeSta;
     params.staSsid = ssid;
-    params.staPassword = password;
+    params.staPassword = password ?: @"";
 
     if (_blufiClient && _connected) {
-           [_blufiClient configure:params];
-       }
+        [_blufiClient configure:params];
+        return YES;
+    }
+    [self updateMessage:[self makeJsonWithCommand:@"configure_params" data:@"0"]];
+    return NO;
 }
 
 /**
@@ -243,19 +249,19 @@
 
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
     [self updateMessage:[self makeJsonWithCommand:@"peripheral_connect" data:@"1"]];
-    self.flutterResult(@(YES));
+    [self completeStoredFlutterResultWithValue:@(YES)];
 }
 
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
     [self updateMessage:[self makeJsonWithCommand:@"peripheral_connect" data:@"0"]];
     self.connected = NO;
-    self.flutterResult(@(NO));
+    [self completeStoredFlutterResultWithValue:@(NO)];
 }
 
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
     [self onDisconnected];
     [self updateMessage:[self makeJsonWithCommand:@"peripheral_disconnect" data:@"1"]];
-    self.flutterResult(@(NO));
+    [self completeStoredFlutterResultWithValue:@(NO)];
     self.connected = NO;
 }
 
@@ -301,10 +307,8 @@
 - (void)blufi:(BlufiClient *)client didPostConfigureParams:(BlufiStatusCode)status {
     if (status == StatusSuccess) {
         [self updateMessage:[self makeJsonWithCommand:@"configure_params" data:@"1"]];
-//        self.flutterResult(@(YES));
     } else {
         [self updateMessage:[self makeJsonWithCommand:@"configure_params" data:@"0"]];
-//        self.flutterResult(@(NO));
     }
 }
 
@@ -314,16 +318,11 @@
         [self updateMessage:[self makeJsonWithCommand:@"device_status" data:@"1"]];
       if ([response isStaConnectWiFi]) {
           [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"1"]];
-          self.connected = YES;
-          self.flutterResult(@(YES));
       } else {
           [self updateMessage:[self makeJsonWithCommand:@"device_wifi_connect" data:@"0"]];
-          self.connected = NO;
-          self.flutterResult(@(NO));
       }
     } else {
         [self updateMessage:[self makeJsonWithCommand:@"device_status" data:@"0"]];
-        self.flutterResult(@(NO));
     }
 }
 
@@ -364,9 +363,26 @@
 - (void)updateMessage:(NSString *)message {
     NSLog(@"%@", message);
 
-    if(_stateStreamHandler.sink != nil) {
-      self.stateStreamHandler.sink(message);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(self.stateStreamHandler.sink != nil) {
+            self.stateStreamHandler.sink(message);
+        }
+    });
+}
+
+- (void)completeFlutterResult:(FlutterResult)result value:(id)value {
+    if (result == nil) {
+        return;
     }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        result(value);
+    });
+}
+
+- (void)completeStoredFlutterResultWithValue:(id)value {
+    FlutterResult result = self.flutterResult;
+    self.flutterResult = nil;
+    [self completeFlutterResult:result value:value];
 }
 
 -(NSString *)makeJsonWithCommand:(NSString*)command data:(NSString *)data {
@@ -397,7 +413,6 @@
  */
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
   // 获取平台版本
-  self.flutterResult = result;
   self.flutterMethodCall = call;
   if ([@"getPlatformVersion" isEqualToString:call.method]) {
     result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
@@ -409,54 +424,63 @@
              self.filterContent = filter;
         }
         [self scanDeviceInfo];
+        result(@(YES));
 
     }
     // 停止扫描蓝牙设备
     else if ([@"stopScan" isEqualToString:call.method]) {
         [self stopScan];
+        result(@(YES));
     }
     // 连接蓝牙设备
     else if ([@"connectPeripheral" isEqualToString:call.method]) {
         NSString *peripheralId = call.arguments[@"peripheral"];
         if (peripheralId != nil) {
             // 直接通过设备 ID (UUID) 连接，不依赖扫描结果字典
+            self.flutterResult = result;
             [self connectPeripheralSyncWithId:peripheralId];
 
         } else {
-            self.flutterResult(@(NO));
+            result(@(NO));
 
         }
     }
     // 请求关闭连接
     else if ([@"requestCloseConnection" isEqualToString:call.method]) {
         [self requestCloseConnection];
+        result(@(YES));
     }
     // 协商安全加密
     else if ([@"negotiateSecurity" isEqualToString:call.method]) {
         [self negotiateSecurity];
+        result(@(YES));
     }
     // 请求设备版本信息
     else if ([@"requestDeviceVersion" isEqualToString:call.method]) {
         [self requestDeviceVersion];
+        result(@(YES));
     }
     // 配置配网参数（Station模式）
     else if ([@"configProvision" isEqualToString:call.method]) {
             NSString *username = call.arguments[@"username"];
             NSString *password = call.arguments[@"password"];
-          [self configProvisionWithSSID:username password:password];
+          result(@([self configProvisionWithSSID:username password:password]));
     }
     // 请求设备当前状态
     else if ([@"requestDeviceStatus" isEqualToString:call.method]) {
         [self requestDeviceStatus];
+        result(@(YES));
     }
     // 请求设备扫描WiFi列表
     else if ([@"requestDeviceScan" isEqualToString:call.method]) {
         [self requestDeviceScan];
+        result(@(YES));
     }
     // 发送自定义数据到设备
     else if ([@"postCustomData" isEqualToString:call.method]) {
         NSString *customData = call.arguments[@"custom_data"];
         [self postCustomData:customData];
+        result(@(YES));
     }
   else {
     result(FlutterMethodNotImplemented);
