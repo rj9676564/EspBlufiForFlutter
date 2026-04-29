@@ -37,7 +37,6 @@ doc/api/
 ### Flutter ###
 # Flutter/Dart/Pub related
 **/doc/api/
-.fvm/flutter_sdk
 .pub-cache/
 .pub/
 coverage/
@@ -102,7 +101,6 @@ pubspec.lock
 # Icon must end with two \r
 Icon
 
-
 # Thumbnails
 ._*
 
@@ -128,3 +126,6 @@ Temporary Items
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,flutter,dart
 .idea
+
+# FVM Version Cache
+.fvm/
